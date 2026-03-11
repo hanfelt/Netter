@@ -28,6 +28,13 @@ struct StatusBarView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
 
+            case .enriching(let progress):
+                ProgressView(value: progress.fractionCompleted)
+                    .frame(width: 120)
+                Text(progress.description)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
             case .completed(let duration):
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)

@@ -7,6 +7,7 @@
 
 import Foundation
 import Observation
+import SwiftUI
 
 @Observable
 final class ScannerViewModel {
@@ -119,7 +120,7 @@ final class ScannerViewModel {
             totalCount: ips.count
         ))
 
-        // Step 1: Ping all hosts concurrently
+        // ── Phase 1: Ping sweep ─────────────────────────────────────────
         let pingResults = await PingService.scanHosts(ips, maxConcurrent: 50) { currentIP, count in
             await MainActor.run {
                 self.scanState = .scanning(progress: ScanProgress(
@@ -130,59 +131,55 @@ final class ScannerViewModel {
             }
         }
 
-        // Check for cancellation
-        if Task.isCancelled {
-            scanState = .idle
-            return
+        if Task.isCancelled { scanState = .idle; return }
+
+        // Build host list
+        withAnimation(.easeInOut(duration: 0.3)) {
+            hosts = pingResults.map { ip, result in
+                ScannedHost(
+                    id: ip,
+                    ipAddress: ip,
+                    isOnline: result.isAlive,
+                    latencyMs: result.latencyMs,
+                    lastSeen: Date()
+                )
+            }
         }
 
-        // Step 2: Build host list from ping results (only online hosts for cleaner results)
-        hosts = pingResults.map { ip, result in
-            ScannedHost(
-                id: ip,
-                ipAddress: ip,
-                isOnline: result.isAlive,
-                latencyMs: result.latencyMs,
-                lastSeen: Date()
-            )
-        }
+        // ── Phase 2: Enrichment (ARP, hostname, ports) ──────────────────
+        let onlineCount = hosts.filter(\.isOnline).count
+        scanState = .enriching(progress: EnrichProgress(
+            completedCount: 0,
+            totalCount: onlineCount,
+            currentIP: ""
+        ))
 
-        // Check for cancellation
-        if Task.isCancelled {
-            scanState = .idle
-            return
-        }
-
-        // Step 3: Read ARP table for MAC addresses and hostnames
-        // The ARP cache is populated by the ping sweep, so hosts that responded
-        // will have entries even if the ping exit code was non-zero (e.g. ICMP blocked but ARP replied)
+        // Step 2a: ARP table → MAC addresses and vendor lookup
         let arpEntries = await ARPService.readARPTable()
-        for entry in arpEntries {
-            if let index = hosts.firstIndex(where: { $0.ipAddress == entry.ipAddress }) {
-                hosts[index].macAddress = entry.macAddress
-                if let hostname = entry.hostname {
-                    hosts[index].hostname = hostname
-                }
-                if let mac = hosts[index].macAddress {
-                    hosts[index].vendor = OUILookup.vendor(for: mac)
-                }
-                // If we have a valid ARP entry (MAC address), the host is reachable
-                // even if ICMP ping was blocked or timed out
-                if !hosts[index].isOnline {
-                    hosts[index].isOnline = true
-                    hosts[index].lastSeen = Date()
+        let arpMap = Dictionary(arpEntries.map { ($0.ipAddress, $0) },
+                                uniquingKeysWith: { first, _ in first })
+
+        withAnimation(.easeInOut(duration: 0.3)) {
+            for i in hosts.indices {
+                if let entry = arpMap[hosts[i].ipAddress] {
+                    hosts[i].macAddress = entry.macAddress
+                    if let hostname = entry.hostname {
+                        hosts[i].hostname = hostname
+                    }
+                    if let mac = hosts[i].macAddress {
+                        hosts[i].vendor = OUILookup.vendor(for: mac)
+                    }
+                    if !hosts[i].isOnline {
+                        hosts[i].isOnline = true
+                        hosts[i].lastSeen = Date()
+                    }
                 }
             }
         }
 
-        // Check for cancellation
-        if Task.isCancelled {
-            scanState = .idle
-            return
-        }
+        if Task.isCancelled { scanState = .idle; return }
 
-        // Step 4: Re-ping online hosts that lack latency data (found via ARP only)
-        // This gives them a second chance with a direct ping for accurate latency
+        // Step 2b: Re-ping hosts found only via ARP (no latency yet)
         let hostsNeedingLatency = hosts.filter { $0.isOnline && $0.latencyMs == nil }
         if !hostsNeedingLatency.isEmpty {
             await withTaskGroup(of: (String, Double?).self) { group in
@@ -200,32 +197,92 @@ final class ScannerViewModel {
             }
         }
 
-        // Check for cancellation
-        if Task.isCancelled {
-            scanState = .idle
-            return
+        if Task.isCancelled { scanState = .idle; return }
+
+        // Step 2c: Hostname resolution (sliding window of 10)
+        var enrichedCount = 0
+        let hostsNeedingHostname = hosts.enumerated()
+            .filter { $0.element.isOnline && $0.element.hostname == nil }
+            .map { (index: $0.offset, ip: $0.element.ipAddress) }
+
+        await withTaskGroup(of: (Int, String?).self) { group in
+            var iterator = hostsNeedingHostname.makeIterator()
+
+            for _ in 0..<min(10, hostsNeedingHostname.count) {
+                guard let item = iterator.next() else { break }
+                group.addTask {
+                    let hostname = await HostnameResolver.resolve(item.ip)
+                    return (item.index, hostname)
+                }
+            }
+
+            for await (index, hostname) in group {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    if let hostname = hostname {
+                        hosts[index].hostname = hostname
+                    }
+                }
+                enrichedCount += 1
+                scanState = .enriching(progress: EnrichProgress(
+                    completedCount: enrichedCount,
+                    totalCount: hostsNeedingHostname.count,
+                    currentIP: hosts[index].ipAddress
+                ))
+
+                if let item = iterator.next() {
+                    group.addTask {
+                        let hostname = await HostnameResolver.resolve(item.ip)
+                        return (item.index, hostname)
+                    }
+                }
+            }
         }
 
-        // Step 5: Resolve hostnames for online hosts that don't have one yet
-        await withTaskGroup(of: (String, String?).self) { group in
-            for host in hosts where host.isOnline && host.hostname == nil {
+        if Task.isCancelled { scanState = .idle; return }
+
+        // Step 2d: Port scan online hosts (sliding window of 5)
+        let hostIndicesForPortScan = hosts.indices.filter { hosts[$0].isOnline }
+        var portScanCount = 0
+
+        await withTaskGroup(of: (Int, [PortInfo]).self) { group in
+            var iterator = hostIndicesForPortScan.makeIterator()
+
+            for _ in 0..<min(5, hostIndicesForPortScan.count) {
+                guard let idx = iterator.next() else { break }
+                let ip = hosts[idx].ipAddress
                 group.addTask {
-                    let hostname = await HostnameResolver.resolve(host.ipAddress)
-                    return (host.ipAddress, hostname)
+                    let ports = await PortScannerService.scan(host: ip)
+                    return (idx, ports)
                 }
             }
-            for await (ip, hostname) in group {
-                if let index = hosts.firstIndex(where: { $0.ipAddress == ip }),
-                   let hostname = hostname {
-                    hosts[index].hostname = hostname
+
+            for await (index, ports) in group {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    hosts[index].openPorts = ports
+                }
+                portScanCount += 1
+                scanState = .enriching(progress: EnrichProgress(
+                    completedCount: portScanCount,
+                    totalCount: hostIndicesForPortScan.count,
+                    currentIP: hosts[index].ipAddress
+                ))
+
+                if let idx = iterator.next() {
+                    let ip = hosts[idx].ipAddress
+                    group.addTask {
+                        let ports = await PortScannerService.scan(host: ip)
+                        return (idx, ports)
+                    }
                 }
             }
         }
+
+        if Task.isCancelled { scanState = .idle; return }
 
         let duration = Date().timeIntervalSince(startTime)
         scanState = .completed(duration: duration)
 
-        // Cache results for this interface
+        // Cache results
         if let iface = selectedInterface {
             resultsCache[iface.id] = (hosts: hosts, state: scanState)
         }

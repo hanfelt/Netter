@@ -15,6 +15,7 @@ nonisolated struct ScannedHost: Identifiable, Sendable {
     var vendor: String?
     var isOnline: Bool
     var latencyMs: Double?
+    var openPorts: [PortInfo] = []
     var lastSeen: Date
 
     /// Numeric sort key for natural IP ordering

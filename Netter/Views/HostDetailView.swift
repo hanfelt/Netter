@@ -33,6 +33,37 @@ struct HostDetailView: View {
                 }
             }
 
+            if !host.openPorts.isEmpty {
+                Section("Open Ports") {
+                    Grid(alignment: .leading, verticalSpacing: 6) {
+                        GridRow {
+                            Text("Port")
+                                .fontWeight(.semibold)
+                            Text("Service")
+                                .fontWeight(.semibold)
+                            Text("Details")
+                                .fontWeight(.semibold)
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                        Divider()
+
+                        ForEach(host.openPorts) { port in
+                            GridRow {
+                                Text(verbatim: "\(port.port)")
+                                    .monospacedDigit()
+                                Text(port.service)
+                                Text(port.displayBanner)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            .font(.callout)
+                        }
+                    }
+                }
+            }
+
             Section("Activity") {
                 LabeledContent("Last Seen", value: host.lastSeen.formatted(
                     .dateTime.hour().minute().second()
