@@ -8,14 +8,41 @@
 import SwiftUI
 
 struct ContentView: View {
+    @State private var viewModel = ScannerViewModel()
+    @State private var showInspector = false
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        NavigationSplitView {
+            SidebarView(viewModel: viewModel)
+        } detail: {
+            ScanResultsView(viewModel: viewModel)
+                .inspector(isPresented: $showInspector) {
+                    if let host = viewModel.selectedHost {
+                        HostDetailView(host: host)
+                    } else {
+                        ContentUnavailableView(
+                            "No Selection",
+                            systemImage: "desktopcomputer",
+                            description: Text("Select a host to view details.")
+                        )
+                    }
+                }
         }
-        .padding()
+        .toolbar {
+            ScanToolbar(viewModel: viewModel)
+
+            ToolbarItem(placement: .automatic) {
+                Toggle(isOn: $showInspector) {
+                    Label("Inspector", systemImage: "sidebar.trailing")
+                }
+                .toggleStyle(.button)
+                .help("Toggle host details inspector")
+            }
+        }
+        .onAppear {
+            viewModel.loadInterfaces()
+        }
+        .frame(minWidth: 800, minHeight: 500)
     }
 }
 
