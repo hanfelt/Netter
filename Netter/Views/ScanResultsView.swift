@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct ScanResultsView: View {
     @Bindable var viewModel: ScannerViewModel
@@ -41,36 +42,65 @@ struct ScanResultsView: View {
                     TableColumn("IP Address", value: \.ipSortKey) { host in
                         Text(host.ipAddress)
                             .font(.body.monospaced())
+                            .copyable(host.ipAddress)
                     }
                     .width(min: 110, ideal: 130)
 
-                    TableColumn("Hostname") { host in
+                    TableColumn("Hostname", value: \.hostnameSortKey) { host in
                         Text(host.hostname ?? "—")
                             .foregroundStyle(host.hostname != nil ? .primary : .tertiary)
+                            .copyable(host.hostname)
                     }
                     .width(min: 100, ideal: 170)
 
-                    TableColumn("MAC Address") { host in
+                    TableColumn("MAC Address", value: \.macSortKey) { host in
                         Text(host.macAddress ?? "—")
                             .font(.body.monospaced())
                             .foregroundStyle(host.macAddress != nil ? .primary : .tertiary)
+                            .copyable(host.macAddress)
                     }
                     .width(min: 130, ideal: 150)
 
-                    TableColumn("Vendor") { host in
+                    TableColumn("Vendor", value: \.vendorSortKey) { host in
                         Text(host.vendor ?? "—")
                             .foregroundStyle(host.vendor != nil ? .primary : .tertiary)
+                            .copyable(host.vendor)
                     }
                     .width(min: 80, ideal: 180)
 
-                    TableColumn("Latency") { host in
+                    TableColumn("Latency", value: \.latencySortKey) { host in
                         Text(host.latencyString ?? "—")
                             .font(.body.monospaced())
                             .foregroundStyle(host.latencyMs != nil ? .primary : .tertiary)
+                            .copyable(host.latencyString)
                     }
                     .width(min: 60, ideal: 75)
                 }
                 .tableStyle(.inset(alternatesRowBackgrounds: true))
+                .searchable(text: $viewModel.searchText, prompt: "Filter by IP, hostname, MAC or vendor")
+                .contextMenu(forSelectionType: String.self) { selection in
+                    if let id = selection.first,
+                       let host = viewModel.hosts.first(where: { $0.id == id }) {
+                        Button("Copy IP Address") {
+                            copyToClipboard(host.ipAddress)
+                        }
+                        if let hostname = host.hostname {
+                            Button("Copy Hostname") {
+                                copyToClipboard(hostname)
+                            }
+                        }
+                        if let mac = host.macAddress {
+                            Button("Copy MAC Address") {
+                                copyToClipboard(mac)
+                            }
+                        }
+                        if let vendor = host.vendor {
+                            Button("Copy Vendor") {
+                                copyToClipboard(vendor)
+                            }
+                        }
+                    }
+                }
             }
 
             StatusBarView(
@@ -79,5 +109,34 @@ struct ScanResultsView: View {
                 totalCount: viewModel.hosts.count
             )
         }
+    }
+
+    private func copyToClipboard(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+}
+
+/// View modifier that adds a right-click "Copy" menu item to any view
+private struct CopyableModifier: ViewModifier {
+    let value: String?
+
+    func body(content: Content) -> some View {
+        if let value, !value.isEmpty {
+            content.contextMenu {
+                Button("Copy") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(value, forType: .string)
+                }
+            }
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    func copyable(_ value: String?) -> some View {
+        modifier(CopyableModifier(value: value))
     }
 }

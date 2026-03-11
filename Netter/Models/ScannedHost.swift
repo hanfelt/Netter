@@ -25,6 +25,12 @@ nonisolated struct ScannedHost: Identifiable, Sendable {
         return (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]
     }
 
+    // Sort keys — empty values sort last (zzz prefix)
+    var hostnameSortKey: String { hostname?.lowercased() ?? "\u{FFFF}" }
+    var macSortKey: String { macAddress ?? "\u{FFFF}" }
+    var vendorSortKey: String { vendor?.lowercased() ?? "\u{FFFF}" }
+    var latencySortKey: Double { latencyMs ?? Double.infinity }
+
     /// Formatted latency string
     var latencyString: String? {
         guard let ms = latencyMs else { return nil }

@@ -20,6 +20,7 @@ final class ScannerViewModel {
     var selectedHostID: String?
     var scanState: ScanState = .idle
     var showOnlineOnly: Bool = true
+    var searchText: String = ""
     var sortOrder: [KeyPathComparator<ScannedHost>] = [
         .init(\.ipSortKey, order: .forward)
     ]
@@ -38,7 +39,18 @@ final class ScannerViewModel {
     }
 
     var filteredHosts: [ScannedHost] {
-        let base = showOnlineOnly ? hosts.filter(\.isOnline) : hosts
+        var base = showOnlineOnly ? hosts.filter(\.isOnline) : hosts
+
+        if !searchText.isEmpty {
+            let query = searchText.lowercased()
+            base = base.filter { host in
+                host.ipAddress.lowercased().contains(query)
+                || (host.hostname?.lowercased().contains(query) ?? false)
+                || (host.macAddress?.lowercased().contains(query) ?? false)
+                || (host.vendor?.lowercased().contains(query) ?? false)
+            }
+        }
+
         return base.sorted(using: sortOrder)
     }
 
