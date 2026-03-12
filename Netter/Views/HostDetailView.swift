@@ -13,6 +13,9 @@ struct HostDetailView: View {
     var body: some View {
         Form {
             Section("Device") {
+                LabeledContent("Type") {
+                    Label(host.deviceType.label, systemImage: host.deviceType.iconName)
+                }
                 LabeledContent("IP Address", value: host.ipAddress)
                 LabeledContent("Hostname", value: host.hostname ?? "Unknown")
                 LabeledContent("Status") {
@@ -27,7 +30,13 @@ struct HostDetailView: View {
 
             Section("Network") {
                 LabeledContent("MAC Address", value: host.macAddress ?? "Unknown")
-                LabeledContent("Vendor", value: host.vendor ?? "Unknown")
+                LabeledContent("Vendor") {
+                    if let vendor = host.vendor {
+                        Label(vendor, systemImage: host.vendorIconName ?? "building.2")
+                    } else {
+                        Text("Unknown")
+                    }
+                }
                 if let latency = host.latencyString {
                     LabeledContent("Latency", value: latency)
                 }

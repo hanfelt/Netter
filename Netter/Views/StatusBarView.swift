@@ -13,36 +13,43 @@ struct StatusBarView: View {
     let totalCount: Int
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             switch scanState {
             case .idle:
-                Image(systemName: "circle")
-                    .foregroundStyle(.secondary)
+                Circle()
+                    .fill(.tertiary)
+                    .frame(width: 5, height: 5)
                 Text("Ready")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
 
             case .scanning(let progress):
                 ProgressView(value: progress.fractionCompleted)
-                    .frame(width: 120)
+                    .frame(width: 100)
+                    .controlSize(.small)
                 Text(progress.description)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .truncationMode(.middle)
 
             case .enriching(let progress):
                 ProgressView(value: progress.fractionCompleted)
-                    .frame(width: 120)
+                    .frame(width: 100)
+                    .controlSize(.small)
                 Text(progress.description)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .truncationMode(.middle)
 
             case .completed(let duration):
                 Image(systemName: "checkmark.circle.fill")
+                    .font(.caption2)
                     .foregroundStyle(.green)
-                Text("Scan complete in \(String(format: "%.1f", duration))s")
+                Text("Done in \(String(format: "%.1f", duration))s")
                     .foregroundStyle(.secondary)
 
             case .error(let message):
                 Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.caption2)
                     .foregroundStyle(.orange)
                 Text(message)
                     .foregroundStyle(.secondary)
@@ -52,15 +59,20 @@ struct StatusBarView: View {
             Spacer()
 
             if totalCount > 0 {
-                Text("\(onlineCount) online")
-                    .foregroundStyle(.green)
-                Text("/ \(totalCount) total")
-                    .foregroundStyle(.secondary)
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(.green)
+                        .frame(width: 5, height: 5)
+                    Text("\(onlineCount)")
+                        .foregroundStyle(.primary)
+                    Text("/ \(totalCount)")
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
-        .font(.caption)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .font(.caption2)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
         .background(.bar)
     }
 }

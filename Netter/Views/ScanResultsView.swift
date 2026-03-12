@@ -28,50 +28,61 @@ struct ScanResultsView: View {
             } else {
                 Table(viewModel.filteredHosts, selection: $viewModel.selectedHostID, sortOrder: $viewModel.sortOrder) {
                     TableColumn("Status") { host in
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(host.isOnline ? Color.green : Color.gray.opacity(0.4))
-                                .frame(width: 8, height: 8)
-                            Text(host.isOnline ? "Online" : "Offline")
-                                .font(.caption)
+                        HStack(spacing: 5) {
+                            Image(systemName: host.vendorIconName ?? host.deviceType.iconName)
+                                .font(.system(size: 12))
                                 .foregroundStyle(host.isOnline ? .primary : .tertiary)
+                                .frame(width: 16)
+                            Circle()
+                                .fill(host.isOnline ? Color.green : Color.gray.opacity(0.3))
+                                .frame(width: 7, height: 7)
                         }
                     }
-                    .width(min: 60, ideal: 75)
+                    .width(min: 50, ideal: 60)
 
                     TableColumn("IP Address", value: \.ipSortKey) { host in
                         Text(host.ipAddress)
-                            .font(.body.monospaced())
+                            .font(.body.monospaced().weight(.medium))
                             .copyable(host.ipAddress)
                     }
                     .width(min: 110, ideal: 130)
 
                     TableColumn("Hostname", value: \.hostnameSortKey) { host in
                         Text(host.hostname ?? "—")
-                            .foregroundStyle(host.hostname != nil ? .primary : .tertiary)
+                            .font(.callout)
+                            .foregroundStyle(host.hostname != nil ? .primary : .quaternary)
                             .copyable(host.hostname)
                     }
                     .width(min: 100, ideal: 170)
 
                     TableColumn("MAC Address", value: \.macSortKey) { host in
                         Text(host.macAddress ?? "—")
-                            .font(.body.monospaced())
-                            .foregroundStyle(host.macAddress != nil ? .primary : .tertiary)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(host.macAddress != nil ? .secondary : .quaternary)
                             .copyable(host.macAddress)
                     }
                     .width(min: 130, ideal: 150)
 
                     TableColumn("Vendor", value: \.vendorSortKey) { host in
-                        Text(host.vendor ?? "—")
-                            .foregroundStyle(host.vendor != nil ? .primary : .tertiary)
-                            .copyable(host.vendor)
+                        HStack(spacing: 5) {
+                            if let iconName = host.vendorIconName {
+                                Image(systemName: iconName)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 14)
+                            }
+                            Text(host.vendor ?? "—")
+                                .font(.callout)
+                                .foregroundStyle(host.vendor != nil ? .primary : .quaternary)
+                        }
+                        .copyable(host.vendor)
                     }
-                    .width(min: 80, ideal: 180)
+                    .width(min: 80, ideal: 190)
 
                     TableColumn("Latency", value: \.latencySortKey) { host in
                         Text(host.latencyString ?? "—")
-                            .font(.body.monospaced())
-                            .foregroundStyle(host.latencyMs != nil ? .primary : .tertiary)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(host.latencyMs != nil ? .secondary : .quaternary)
                             .copyable(host.latencyString)
                     }
                     .width(min: 60, ideal: 75)
