@@ -19,7 +19,7 @@ A native macOS network scanner built with SwiftUI. Discover hosts on your local 
 
 ## Screenshots
 
-<!-- Add screenshots here -->
+<img width="1210" height="125" alt="CleanShot 2026-03-12 at 12 03 35" src="https://github.com/user-attachments/assets/3b59d566-7dc3-4016-bed2-1d410631e78c" />
 
 ## Requirements
 
