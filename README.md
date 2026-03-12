@@ -6,7 +6,7 @@ A native macOS network scanner built with SwiftUI. Discover hosts on your local 
 
 - **Network Interface Detection** — Automatically discovers Wi-Fi, Ethernet, and other active interfaces. Add custom IP ranges for VPNs or remote subnets.
 - **Host Discovery** — Concurrent ICMP ping sweep with up to 50 simultaneous probes. See hosts appear in real-time as they respond.
-- **Port Scanning** — Scan common ports (or custom ranges) with TCP connect and banner grabbing for service identification.
+- **Port Scanning** — Scan common ports with TCP connect and banner grabbing for service identification.
 - **MAC Address & Vendor Lookup** — Reads the ARP table after scanning and identifies manufacturers from a bundled OUI database with 28,000+ vendor entries.
 - **Device Type Inference** — Classifies devices as routers, printers, NAS, phones, servers, IoT devices, and more based on vendor name and open port signatures.
 - **Vendor Icons** — Maps ~40 common vendors to SF Symbol icons for quick visual identification.
