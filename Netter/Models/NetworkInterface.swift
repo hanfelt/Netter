@@ -15,7 +15,9 @@ nonisolated struct NetworkInterface: Identifiable, Hashable, Sendable {
     let subnetMask: String
 
     var iconName: String {
-        if name == "en0" || displayName.lowercased().contains("wi-fi") {
+        if name == "custom" {
+            return "globe"
+        } else if name == "en0" || displayName.lowercased().contains("wi-fi") {
             return "wifi"
         } else if displayName.lowercased().contains("ethernet") || displayName.lowercased().contains("thunderbolt") {
             return "cable.connector.horizontal"
@@ -54,7 +56,7 @@ nonisolated struct NetworkInterface: Identifiable, Hashable, Sendable {
     }
 
     /// Create a NetworkInterface from CIDR notation (e.g. "192.168.1.0/24" or "10.0.0.0/16")
-    static func fromCIDR(_ cidr: String) -> NetworkInterface? {
+    static func fromCIDR(_ cidr: String, name: String? = nil) -> NetworkInterface? {
         let parts = cidr.trimmingCharacters(in: .whitespaces).split(separator: "/")
         guard parts.count == 2,
               let prefixLength = Int(parts[1]),
@@ -72,10 +74,12 @@ nonisolated struct NetworkInterface: Identifiable, Hashable, Sendable {
         let maskValue: UInt32 = prefixLength == 0 ? 0 : ~((1 << (32 - prefixLength)) - 1)
         let mask = "\((maskValue >> 24) & 0xFF).\((maskValue >> 16) & 0xFF).\((maskValue >> 8) & 0xFF).\(maskValue & 0xFF)"
 
+        let displayName = (name?.isEmpty == false) ? name! : cidr
+
         return NetworkInterface(
             id: "custom-\(cidr)",
             name: "custom",
-            displayName: cidr,
+            displayName: displayName,
             ipAddress: ipStr,
             subnetMask: mask
         )

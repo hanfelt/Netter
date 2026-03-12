@@ -7,7 +7,7 @@
 
 import Foundation
 
-nonisolated struct PortInfo: Identifiable, Sendable {
+nonisolated struct PortInfo: Identifiable, Sendable, Codable {
     let port: UInt16
     let service: String
     let banner: String?

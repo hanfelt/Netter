@@ -62,21 +62,53 @@ final class ScannerViewModel {
 
     func loadInterfaces() {
         interfaces = NetworkInterfaceService.discoverInterfaces()
+
+        // Restore saved custom networks
+        let savedNetworks = PersistenceService.loadCustomNetworks()
+        for network in savedNetworks {
+            if let iface = NetworkInterface.fromCIDR(network.cidr, name: network.name) {
+                if !interfaces.contains(where: { $0.id == iface.id }) {
+                    interfaces.append(iface)
+                }
+                // Restore cached scan results from disk
+                if let savedHosts = PersistenceService.loadScanResults(for: iface.id) {
+                    resultsCache[iface.id] = (hosts: savedHosts, state: .idle)
+                }
+            }
+        }
+
         if selectedInterface == nil {
             selectedInterface = interfaces.first
         }
     }
 
-    /// Add a custom network from CIDR string and select it
-    func addCustomNetwork(_ cidr: String) -> Bool {
-        guard let iface = NetworkInterface.fromCIDR(cidr) else {
+    /// Add a custom network from CIDR string with optional name and select it
+    func addCustomNetwork(_ cidr: String, name: String? = nil) -> Bool {
+        guard let iface = NetworkInterface.fromCIDR(cidr, name: name) else {
             return false
         }
         // Remove any previous custom network with the same CIDR
         interfaces.removeAll { $0.id == iface.id }
         interfaces.append(iface)
+        persistCustomNetworks()
         selectInterface(iface)
         return true
+    }
+
+    /// Remove a custom network and its saved results
+    func removeCustomNetwork(_ interface: NetworkInterface) {
+        let wasSelected = selectedInterface == interface
+
+        // Clear cache and persisted results
+        resultsCache.removeValue(forKey: interface.id)
+        PersistenceService.removeScanResults(for: interface.id)
+
+        interfaces.removeAll { $0.id == interface.id }
+        persistCustomNetworks()
+
+        if wasSelected {
+            selectInterface(interfaces.first)
+        }
     }
 
     func selectInterface(_ interface: NetworkInterface?) {
@@ -121,11 +153,24 @@ final class ScannerViewModel {
 
     // MARK: - Private Methods
 
+    private func persistCustomNetworks() {
+        let networks = interfaces
+            .filter { $0.id.hasPrefix("custom-") }
+            .map { iface in
+                let cidr = iface.id.replacingOccurrences(of: "custom-", with: "")
+                // Only save the name if it differs from the CIDR (i.e. user gave a custom name)
+                let name = (iface.displayName != cidr) ? iface.displayName : nil
+                return PersistenceService.SavedNetwork(cidr: cidr, name: name)
+            }
+        PersistenceService.saveCustomNetworks(networks)
+    }
+
     private func performScan(on interface: NetworkInterface) async {
+        let interfaceID = interface.id
         let ips = interface.scannableIPs
         let startTime = Date()
         hosts = []
-        resultsCache.removeValue(forKey: interface.id)
+        resultsCache.removeValue(forKey: interfaceID)
         scanState = .scanning(progress: ScanProgress(
             currentIP: "",
             scannedCount: 0,
@@ -134,7 +179,9 @@ final class ScannerViewModel {
 
         // ── Phase 1: Ping sweep ─────────────────────────────────────────
         let pingResults = await PingService.scanHosts(ips, maxConcurrent: 50) { currentIP, count in
+            guard !Task.isCancelled else { return }
             await MainActor.run {
+                guard self.selectedInterface?.id == interfaceID else { return }
                 self.scanState = .scanning(progress: ScanProgress(
                     currentIP: currentIP,
                     scannedCount: count,
@@ -143,7 +190,7 @@ final class ScannerViewModel {
             }
         }
 
-        if Task.isCancelled { scanState = .idle; return }
+        guard !Task.isCancelled, selectedInterface?.id == interfaceID else { return }
 
         // Build host list
         withAnimation(.easeInOut(duration: 0.3)) {
@@ -168,6 +215,9 @@ final class ScannerViewModel {
 
         // Step 2a: ARP table → MAC addresses and vendor lookup
         let arpEntries = await ARPService.readARPTable()
+
+        guard !Task.isCancelled, selectedInterface?.id == interfaceID else { return }
+
         let arpMap = Dictionary(arpEntries.map { ($0.ipAddress, $0) },
                                 uniquingKeysWith: { first, _ in first })
 
@@ -189,7 +239,7 @@ final class ScannerViewModel {
             }
         }
 
-        if Task.isCancelled { scanState = .idle; return }
+        guard !Task.isCancelled, selectedInterface?.id == interfaceID else { return }
 
         // Step 2b: Re-ping hosts found only via ARP (no latency yet)
         let hostsNeedingLatency = hosts.filter { $0.isOnline && $0.latencyMs == nil }
@@ -202,6 +252,7 @@ final class ScannerViewModel {
                     }
                 }
                 for await (ip, latencyMs) in group {
+                    if Task.isCancelled { group.cancelAll(); return }
                     if let index = hosts.firstIndex(where: { $0.ipAddress == ip }) {
                         hosts[index].latencyMs = latencyMs
                     }
@@ -209,7 +260,7 @@ final class ScannerViewModel {
             }
         }
 
-        if Task.isCancelled { scanState = .idle; return }
+        guard !Task.isCancelled, selectedInterface?.id == interfaceID else { return }
 
         // Step 2c: Hostname resolution (sliding window of 10)
         var enrichedCount = 0
@@ -229,6 +280,7 @@ final class ScannerViewModel {
             }
 
             for await (index, hostname) in group {
+                if Task.isCancelled { group.cancelAll(); return }
                 withAnimation(.easeInOut(duration: 0.25)) {
                     if let hostname = hostname {
                         hosts[index].hostname = hostname
@@ -250,7 +302,7 @@ final class ScannerViewModel {
             }
         }
 
-        if Task.isCancelled { scanState = .idle; return }
+        guard !Task.isCancelled, selectedInterface?.id == interfaceID else { return }
 
         // Step 2d: Port scan online hosts (sliding window of 5)
         let hostIndicesForPortScan = hosts.indices.filter { hosts[$0].isOnline }
@@ -269,6 +321,7 @@ final class ScannerViewModel {
             }
 
             for await (index, ports) in group {
+                if Task.isCancelled { group.cancelAll(); return }
                 withAnimation(.easeInOut(duration: 0.25)) {
                     hosts[index].openPorts = ports
                 }
@@ -289,14 +342,15 @@ final class ScannerViewModel {
             }
         }
 
-        if Task.isCancelled { scanState = .idle; return }
+        guard !Task.isCancelled, selectedInterface?.id == interfaceID else { return }
 
         let duration = Date().timeIntervalSince(startTime)
         scanState = .completed(duration: duration)
 
-        // Cache results
-        if let iface = selectedInterface {
-            resultsCache[iface.id] = (hosts: hosts, state: scanState)
+        // Cache results for the scanned interface (use interfaceID, not selectedInterface)
+        resultsCache[interfaceID] = (hosts: hosts, state: scanState)
+        if interfaceID.hasPrefix("custom-") {
+            PersistenceService.saveScanResults(hosts, for: interfaceID)
         }
     }
 }

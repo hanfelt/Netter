@@ -7,7 +7,7 @@
 
 import Foundation
 
-nonisolated struct ScannedHost: Identifiable, Sendable {
+nonisolated struct ScannedHost: Identifiable, Sendable, Codable {
     let id: String
     let ipAddress: String
     var hostname: String?

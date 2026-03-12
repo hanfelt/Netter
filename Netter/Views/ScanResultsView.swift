@@ -109,6 +109,7 @@ struct ScanResultsView: View {
                 totalCount: viewModel.hosts.count
             )
         }
+        .navigationTitle("Netter")
     }
 
     private func copyToClipboard(_ value: String) {
